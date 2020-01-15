@@ -1,0 +1,7 @@
+cuee	# binary
+.*.swp	# vi(m) swap
+
+# media files
+*.flac
+*.cue
+
