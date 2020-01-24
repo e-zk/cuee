@@ -2,12 +2,21 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 )
+
+// show; 0 = don't show args, 1 = show args, 2 = show but don't run args
+// ffmOutput; show ffmpeg output
+type Options struct {
+	show      bool
+	dontRun   bool
+	ffmOutput bool
+}
 
 type StartTime struct {
 	minutes int
@@ -32,13 +41,16 @@ type Album struct {
 }
 
 const (
-	ffmpegPath   = "ffmpeg"
-	ffmpegOutput = true // show ffmpeg command output
-	showArgs     = true // show ffmpeg arguments before executing
+	// path to ffmpeg
+	ffmpegPath = "ffmpeg"
 )
 
+// default options
+//var options Options = Options{show: 0, ffmOutput: true}
+var options Options
+
 // Prints an Album in human-readable format
-func (a *Album) print() {
+func (a *Album) Print() {
 	fmt.Printf("FILE: %s\n", a.file)
 	fmt.Printf("TITLE: %s\n", a.name)
 	fmt.Printf("ARTIST: %s\n", a.artist)
@@ -53,11 +65,17 @@ func (a *Album) print() {
 }
 
 // Converts a StartTime to a string
-func (s *StartTime) toString() string {
+func (s *StartTime) String() string {
 	hours := s.minutes / 60
 	minutes := s.minutes % 60
 
 	output := fmt.Sprintf("%02d:%02d:%02d.%02d", hours, minutes, s.seconds, s.ms)
+	return output
+}
+
+// Prints options as a string (soley for debugging)
+func (opt *Options) String() (output string) {
+	output = fmt.Sprintf("show: %t\ndontrun: %t\nffmOutput: %t\n", opt.show, opt.dontRun, opt.ffmOutput)
 	return output
 }
 
@@ -69,6 +87,9 @@ func newTime(input string) StartTime {
 	return time
 }
 
+// Escape a string
+// Currently this is used for the edgecase where if a filename contains '/'
+// ffmpeg refuses to process it, thinking it means 'dir/file.flac'
 func escape(input string) string {
 	return strings.ReplaceAll(input, "/", "-")
 }
@@ -180,28 +201,37 @@ func extractAlbum(album Album) {
 
 		// if the current track is the last one...
 		if index == album.numTracks-1 {
+			// omit "-to" argument to tell ffmpeg to seek till end of file
 			cmd = exec.Command(ffmpegPath, "-n",
-				"-ss", track.startTime.toString(),
+				"-ss", track.startTime.String(),
 				"-i", album.file,
 				escape(outputName))
 		} else {
 			// get the next track
 			nextTrack := (*album.tracks)[index+1]
+
 			// cut the file from the current track's start to the next track's start
 			cmd = exec.Command(ffmpegPath, "-n",
-				"-ss", track.startTime.toString(), "-i", album.file,
-				"-to", nextTrack.startTime.toString(),
+				"-ss", track.startTime.String(),
+				"-i", album.file,
+				"-to", nextTrack.startTime.String(),
 				escape(outputName))
 		}
 
-		if showArgs == true {
-			fmt.Printf("%s\n", cmd.Args)
+		if options.show {
+			fmt.Printf("%v\n", cmd.Args)
+		}
+
+		// if don't run is enabled; return now
+		if options.dontRun {
+			return
 		}
 
 		// run the ffmpeg command, capturing the output
 		out, err := cmd.CombinedOutput()
 
-		if ffmpegOutput == true {
+		// if we need to show ffmpeg's output, then do it:
+		if options.ffmOutput == true {
 			fmt.Printf("%s\n", out)
 		}
 
@@ -211,10 +241,40 @@ func extractAlbum(album Album) {
 	}
 }
 
+// Show usage info
+func usage() {
+	fmt.Printf("usage: %s [-anhs] file.cue\n", os.Args[0])
+	fmt.Printf("\t-a\tprint ffmpeg arguments\n")
+	fmt.Printf("\t-h\tshow this help\n")
+	fmt.Printf("\t-n\tdon't actually run ffmpeg\n")
+	fmt.Printf("\t-s\tshow ffmpeg output\n")
+}
+
+// Main
 func main() {
 
-	album := parseCue("./test.cue")
-	album.print()
+	// flag parsing
+	flag.BoolVar(&options.show, "a", false, "display command line arguments before executing ffmpeg")
+	flag.BoolVar(&options.ffmOutput, "s", false, "display ffmpeg output")
+	flag.BoolVar(&options.dontRun, "n", false, "not actually run anything")
+
+	flag.Usage = usage // set custom usage function
+	flag.Parse()       // parse
+
+	// arguments remaining
+	narg := len(os.Args) - flag.NArg()
+	nflag := (len(os.Args) - 1) - flag.NFlag()
+
+	if nflag != 1 {
+		fmt.Printf("insufficient arguments given\n")
+		usage()
+		return
+	}
+
+	cuePath := os.Args[narg]
+	album := parseCue(cuePath)
+	album.Print()
+
 	print("extracting...\n")
 	extractAlbum(album)
 }
