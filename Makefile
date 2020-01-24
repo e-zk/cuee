@@ -2,11 +2,7 @@
 .POSIX:
 .SUFFIXES:
 
-# macros
-BIN = cuee
-GOCMD = go
-GOBUILD = $(GOCMD) build
-GOGET = $(GOCMD) get
+.include <config.mk>
 
 # by default, build
 all: build
@@ -14,6 +10,10 @@ all: build
 # build the binary
 build: 
 	$(GOBUILD) -o $(BIN) -v 
+
+install:build
+	cp -v $(BIN) $(BINPATH)
+	chmod +x $(BINPATH)
 
 # clean up
 clean:
